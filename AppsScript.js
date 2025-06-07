@@ -4,10 +4,18 @@ class Functionals {
         return x => x;
     }
 
-    /** Lazy stream budget edition. Evaluation happen when terminal operation `collect()` is called. */
+    /** Java's lazy stream / Haskell's list budget edition. Evaluation happen when terminal operation `collect()` is called. */
+    static stream(arr, mapAccumulator=Functionals.identity()) {
+        return {
+            map: fn => Functionals.stream(arr, x => fn(mapAccumulator(x))),
+            collect: () => arr.map(mapAccumulator),
+        };
+    }
+
+    /** `IntStream` budget edition. See `Functionals.stream()`. */
     static intStream(start, end, mapAccumulator=Functionals.identity()) {
         return {
-            map: fn => Functionals.intStream(start, end, v => fn(mapAccumulator(v))),
+            map: fn => Functionals.intStream(start, end, x => fn(mapAccumulator(x))),
             collect: () => {
                 const result = [];
                 for (let i = start; i < end; ++i) result.push(mapAccumulator(i));
@@ -22,9 +30,9 @@ class Functionals {
         return { map: mapper => setter(mapper(getter())) };
     }
 
-    /** Use false as initial value */
+    /** Produce reducer that return `true` if predicate match. Use false as `reduce()` initial value */
     static anyReduce(predicate) {
-        return (acc, x) => acc || predicate(x); 
+        return (acc, x) => acc || predicate(x);
     }
 }
 
