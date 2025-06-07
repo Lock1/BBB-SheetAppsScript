@@ -41,7 +41,7 @@ class Pipe {
     static input(fn1, fnAccumulator=Functionals.identity()) {
         return {
             connect: fn2 => Pipe.input(fn2, x => fn1(fnAccumulator(x))),
-            output: fn2 => x => fn2(fn1(fnAccumulator(x))),
+            output: fn2 => ({ compute: x => fn2(fn1(fnAccumulator(x))) }),
         };
     }
 
@@ -126,10 +126,10 @@ function categoricalFormatter() {
         + `Apply categorical format?`;
     const ui = SpreadsheetApp.getUi();
     if (ui.alert(prompt, ui.ButtonSet.YES_NO) === ui.Button.YES) {
-        const executionPipeline = Pipe.source(selectedSheet.getConditionalFormatRules)
+        Pipe.source(selectedSheet.getConditionalFormatRules)
             .connect(originalFormatList => originalFormatList.concat(formatListFromEnumerables))
-            .output(selectedSheet.setConditionalFormatRules);
-        executionPipeline();
+            .output(selectedSheet.setConditionalFormatRules)
+            .compute();
     }
 }
 
@@ -151,10 +151,10 @@ function copyConditionalFormat() {
             const targetSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(stringTargetSheet);
             const targetRange = targetSheet.getRange(stringTargetRange);
             const clonedFormatList = selectedFormatList.map(format => format.copy().setRanges([targetRange]).build());
-            const executionPipeline = Pipe.source(targetSheet.getConditionalFormatRules)
+            Pipe.source(targetSheet.getConditionalFormatRules)
                 .connect(originalFormatList => originalFormatList.concat(clonedFormatList))
-                .output(targetSheet.setConditionalFormatRules);
-            executionPipeline();
+                .output(targetSheet.setConditionalFormatRules)
+                .compute();
             ui.alert(`Format copied successfully (Sheet name: ${stringTargetSheet}, Range: ${stringTargetRange})`);
         } catch {
             ui.alert(`Error while trying to copy (Sheet name: ${stringTargetSheet}, Range: ${stringTargetRange})`);
@@ -167,7 +167,7 @@ function eraseFormat() {
     const selectedRange = selectedSheet.getSelection().getActiveRange();
     const cellList = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange);
     const ui = SpreadsheetApp.getUi();
-    const executionPipeline = Pipe.source(selectedSheet.getConditionalFormatRules)
+    Pipe.source(selectedSheet.getConditionalFormatRules)
         .connect(originalFormatList => {
             const filteredList = originalFormatList.filter( // Filter out all format that contain cellList element
                 format => !cellList.reduce(Functionals.anyReduce(cell => GoogleSheetUtils.isCellInsideFormatRange(format, cell)), false)
@@ -175,7 +175,7 @@ function eraseFormat() {
             const prompt = `Erase ${originalFormatList.length - filteredList.length} conditional format?\n`
                 + `Note: This will completely erase it from the sheet, unlike "Clear Formatting" which only detach range`;
             return ui.alert(prompt, ui.ButtonSet.YES_NO) === ui.Button.YES ? filteredList : originalFormatList;
-        }).output(selectedSheet.setConditionalFormatRules);
-    executionPipeline();
+        }).output(selectedSheet.setConditionalFormatRules)
+        .compute();
 }
 
