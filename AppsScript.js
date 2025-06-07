@@ -45,7 +45,7 @@ class Pipe {
         };
     }
 
-    static supplier(fn1) {
+    static source(fn1) {
         return Pipe.input(_ => fn1());
     }
 }
@@ -126,7 +126,7 @@ function categoricalFormatter() {
         + `Apply categorical format?`;
     const ui = SpreadsheetApp.getUi();
     if (ui.alert(prompt, ui.ButtonSet.YES_NO) === ui.Button.YES) {
-        const executionPipeline = Pipe.supplier(selectedSheet.getConditionalFormatRules)
+        const executionPipeline = Pipe.source(selectedSheet.getConditionalFormatRules)
             .connect(originalFormatList => originalFormatList.concat(formatListFromEnumerables))
             .output(selectedSheet.setConditionalFormatRules);
         executionPipeline();
@@ -151,7 +151,7 @@ function copyConditionalFormat() {
             const targetSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(stringTargetSheet);
             const targetRange = targetSheet.getRange(stringTargetRange);
             const clonedFormatList = selectedFormatList.map(format => format.copy().setRanges([targetRange]).build());
-            const executionPipeline = Pipe.supplier(targetSheet.getConditionalFormatRules)
+            const executionPipeline = Pipe.source(targetSheet.getConditionalFormatRules)
                 .connect(originalFormatList => originalFormatList.concat(clonedFormatList))
                 .output(targetSheet.setConditionalFormatRules);
             executionPipeline();
@@ -167,7 +167,7 @@ function eraseFormat() {
     const selectedRange = selectedSheet.getSelection().getActiveRange();
     const cellList = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange);
     const ui = SpreadsheetApp.getUi();
-    const executionPipeline = Pipe.supplier(selectedSheet.getConditionalFormatRules)
+    const executionPipeline = Pipe.source(selectedSheet.getConditionalFormatRules)
         .connect(originalFormatList => {
             const filteredList = originalFormatList.filter( // Filter out all format that contain cellList element
                 format => !cellList.reduce(Functionals.anyReduce(cell => GoogleSheetUtils.isCellInsideFormatRange(format, cell)), false)
