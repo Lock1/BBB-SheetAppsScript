@@ -29,11 +29,6 @@ class Functionals {
     static attributeAccessorToMutationMap(getter, setter) {
         return { map: mapper => setter(mapper(getter())) };
     }
-
-    /** Produce reducer that return `true` if predicate match. Use false as `reduce()` initial value */
-    static anyReduce(predicate) {
-        return (acc, x) => acc || predicate(x);
-    }
 }
 
 /** It's Functionals nested namespace, but JS sucks */
@@ -66,8 +61,7 @@ class GoogleSheetUtils {
     }
 
     static isCellInsideFormatRange(format, cell) {
-        return format.getRanges()
-            .reduce(Functionals.anyReduce(range => GoogleSheetUtils.isCellInsideRange(range, cell)), false);
+        return format.getRanges().some(range => GoogleSheetUtils.isCellInsideRange(range, cell));
     }
 }
 
@@ -80,7 +74,7 @@ function onOpen() {
                     ui.createMenu("From selected range")
                         .addItem("Enumerate categorical color scale", "categoricalFormatter")
                         .addItem("Copy conditional format", "copyConditionalFormat")
-                        .addItem("Erase all in selection", "eraseFormat")
+                        .addItem("Erase all in selection", "eraseConditionalFormat")
                 )
         ).addToUi();
 }
@@ -138,7 +132,7 @@ function copyConditionalFormat() {
     const selectedRange = selectedSheet.getSelection().getActiveRange();
     const cellList = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange);
     const selectedFormatList = selectedSheet.getConditionalFormatRules() // Filter out all format that doesn't contain cellList element
-        .filter(format => cellList.reduce(Functionals.anyReduce(cell => GoogleSheetUtils.isCellInsideFormatRange(format, cell)), false));
+        .filter(format => cellList.some(cell => GoogleSheetUtils.isCellInsideFormatRange(format, cell)));
 
     const prompt = `Selected Range: ${selectedRange.getA1Notation()}\n`
         + `Conditional format count: ${selectedFormatList.length}\n`
@@ -162,16 +156,15 @@ function copyConditionalFormat() {
     }
 }
 
-function eraseFormat() {
+function eraseConditionalFormat() {
     const selectedSheet = SpreadsheetApp.getActiveSheet();
     const selectedRange = selectedSheet.getSelection().getActiveRange();
     const cellList = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange);
     const ui = SpreadsheetApp.getUi();
     Pipe.source(selectedSheet.getConditionalFormatRules)
         .connect(originalFormatList => {
-            const filteredList = originalFormatList.filter( // Filter out all format that contain cellList element
-                format => !cellList.reduce(Functionals.anyReduce(cell => GoogleSheetUtils.isCellInsideFormatRange(format, cell)), false)
-            );
+            // Filter out all format that contain cellList element
+            const filteredList = originalFormatList.filter(format => !cellList.some(cell => GoogleSheetUtils.isCellInsideFormatRange(format, cell)));
             const prompt = `Erase ${originalFormatList.length - filteredList.length} conditional format?\n`
                 + `Note: This will completely erase it from the sheet, unlike "Clear Formatting" which only detach range`;
             return ui.alert(prompt, ui.ButtonSet.YES_NO) === ui.Button.YES ? filteredList : originalFormatList;
