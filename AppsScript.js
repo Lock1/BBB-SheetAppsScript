@@ -29,11 +29,10 @@ class Functionals {
 
 class GoogleSheetUtils {
     static sheetRangeToLinearCellList(range) {
-        const result = [];
-        for (let i = 1; i <= range.getNumRows(); ++i)
-            for (let j = 1; j <= range.getNumColumns(); ++j)
-                result.push(range.getCell(i, j));
-        return result;
+        return Functionals.intStream(1, range.getNumRows()+1)
+            .map(i => Functionals.intStream(1, range.getNumColumns()+1).map(j => range.getCell(i, j)).collect()
+        ).collect()
+        .flat();
     }
 
     static isCellInsideRange(range, cell) { // Ugh, sucks. No type => Hungarian notation again
@@ -44,7 +43,8 @@ class GoogleSheetUtils {
     }
 
     static isCellInsideFormatRange(format, cell) {
-        return format.getRanges().reduce(Functionals.anyReduce(range => GoogleSheetUtils.isCellInsideRange(range, cell)), false);
+        return format.getRanges()
+            .reduce(Functionals.anyReduce(range => GoogleSheetUtils.isCellInsideRange(range, cell)), false);
     }
 }
 
