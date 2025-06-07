@@ -1,3 +1,4 @@
+/** Brush's budget functional utilities for JS. v0.1 */
 class Functionals {
     static identity() {
         return x => x;
@@ -15,7 +16,7 @@ class Functionals {
         };
     }
 
-    // Here's my original name: tranformTerribleOOPCargoCultGetSetIntoSanerMutationMap()
+    // Here's my original name: transformTerribleOOPCargoCultGetSetIntoSanerMutationMap()
     /** Transform pair of getter-setter into pipelined functional programming map operation */
     static attributeAccessorToMutationMap(getter, setter) {
         return { map: mapper => setter(mapper(getter())) };
