@@ -36,6 +36,20 @@ class Functionals {
     }
 }
 
+/** It's Functionals nested namespace, but JS sucks */
+class Pipe {
+    static input(fn1, fnAccumulator=Functionals.identity()) {
+        return {
+            connect: fn2 => Pipe.input(fn2, x => fn1(fnAccumulator(x))),
+            output: fn2 => x => fn2(fn1(fnAccumulator(x))),
+        };
+    }
+
+    static supplier(fn1) {
+        return Pipe.input(_ => fn1());
+    }
+}
+
 class GoogleSheetUtils {
     static sheetRangeToLinearCellList(range) {
         return Functionals.intStream(1, range.getNumRows()+1)
@@ -83,38 +97,39 @@ function categoricalFormatter() {
             },
             midpoint: 0.5,
         };
-        return Functionals.intStream(0, 3).map(percentage < CONFIGURATION.midpoint
-            ? i => integerLerp(CONFIGURATION.color.start[i], CONFIGURATION.color.mid[i], percentage/CONFIGURATION.midpoint)
-            : i => integerLerp(CONFIGURATION.color.mid[i],   CONFIGURATION.color.end[i], (percentage-CONFIGURATION.midpoint)/(1-CONFIGURATION.midpoint))
-        ).collect();
+        return Functionals.intStream(0, 3)
+            .map(percentage < CONFIGURATION.midpoint
+                ? i => integerLerp(CONFIGURATION.color.start[i], CONFIGURATION.color.mid[i], percentage/CONFIGURATION.midpoint)
+                : i => integerLerp(CONFIGURATION.color.mid[i],   CONFIGURATION.color.end[i], (percentage-CONFIGURATION.midpoint)/(1-CONFIGURATION.midpoint))
+            ).collect();
     }
-    function tripletArrayToHexString(arr) {
-        return `#${arr[0].toString(16)}${arr[1].toString(16)}${arr[2].toString(16)}`;
+    function tripletArrayToHexString([r, g, b]) {
+        return `#${r.toString(16)}${g.toString(16)}${b.toString(16)}`;
     }
+    function keyColorRangeTupleToFormat([key, color, range]) {
+        return SpreadsheetApp.newConditionalFormatRule()
+            .whenTextEqualTo(key)
+            .setBackground(tripletArrayToHexString(color))
+            .setRanges([range])
+            .build();
+    }
+
     const selectedSheet = SpreadsheetApp.getActiveSheet();
     const selectedRange = selectedSheet.getSelection().getActiveRange();
-    const enumerables = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange)
+    const formatListFromEnumerables = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange)
         .map(cell => cell.getValue())
-        .filter((x, i, arr) => arr.indexOf(x) === i);
+        .filter((x, i, arr) => arr.indexOf(x) === i) // Naive duplicate filter
+        .map((key, i, arr) => [key, interpolator(i/arr.length), selectedRange])
+        .map(keyColorRangeTupleToFormat);
     const prompt = `Selected Range: ${selectedRange.getA1Notation()}\n`
-        + `Conditional format count: ${enumerables.length}\n`
+        + `Conditional format count: ${formatListFromEnumerables.length}\n`
         + `Apply categorical format?`;
     const ui = SpreadsheetApp.getUi();
     if (ui.alert(prompt, ui.ButtonSet.YES_NO) === ui.Button.YES) {
-        Functionals.attributeAccessorToMutationMap(
-            selectedSheet.getConditionalFormatRules,
-            selectedSheet.setConditionalFormatRules,
-        ).map(originalFormatList =>
-            originalFormatList.concat(
-                enumerables.map((key, i) => [key, interpolator(i/enumerables.length)])
-                    .map(pair => SpreadsheetApp.newConditionalFormatRule()
-                            .whenTextEqualTo(pair[0])
-                            .setBackground(tripletArrayToHexString(pair[1]))
-                            .setRanges([selectedRange])
-                            .build()
-                        )
-            )
-        );
+        const executionPipeline = Pipe.supplier(selectedSheet.getConditionalFormatRules)
+            .connect(originalFormatList => originalFormatList.concat(formatListFromEnumerables))
+            .output(selectedSheet.setConditionalFormatRules);
+        executionPipeline();
     }
 }
 
@@ -136,10 +151,10 @@ function copyConditionalFormat() {
             const targetSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(stringTargetSheet);
             const targetRange = targetSheet.getRange(stringTargetRange);
             const clonedFormatList = selectedFormatList.map(format => format.copy().setRanges([targetRange]).build());
-            Functionals.attributeAccessorToMutationMap(
-                targetSheet.getConditionalFormatRules,
-                targetSheet.setConditionalFormatRules,
-            ).map(originalFormatList => originalFormatList.concat(clonedFormatList));
+            const executionPipeline = Pipe.supplier(targetSheet.getConditionalFormatRules)
+                .connect(originalFormatList => originalFormatList.concat(clonedFormatList))
+                .output(targetSheet.setConditionalFormatRules);
+            executionPipeline();
             ui.alert(`Format copied successfully (Sheet name: ${stringTargetSheet}, Range: ${stringTargetRange})`);
         } catch {
             ui.alert(`Error while trying to copy (Sheet name: ${stringTargetSheet}, Range: ${stringTargetRange})`);
@@ -152,18 +167,15 @@ function eraseFormat() {
     const selectedRange = selectedSheet.getSelection().getActiveRange();
     const cellList = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange);
     const ui = SpreadsheetApp.getUi();
-    Functionals.attributeAccessorToMutationMap(
-        selectedSheet.getConditionalFormatRules,
-        selectedSheet.setConditionalFormatRules,
-    ).map(
-        originalFormatList => {
+    const executionPipeline = Pipe.supplier(selectedSheet.getConditionalFormatRules)
+        .connect(originalFormatList => {
             const filteredList = originalFormatList.filter( // Filter out all format that contain cellList element
                 format => !cellList.reduce(Functionals.anyReduce(cell => GoogleSheetUtils.isCellInsideFormatRange(format, cell)), false)
             );
             const prompt = `Erase ${originalFormatList.length - filteredList.length} conditional format?\n`
                 + `Note: This will completely erase it from the sheet, unlike "Clear Formatting" which only detach range`;
             return ui.alert(prompt, ui.ButtonSet.YES_NO) === ui.Button.YES ? filteredList : originalFormatList;
-        }
-    );
+        }).output(selectedSheet.setConditionalFormatRules);
+    executionPipeline();
 }
 
