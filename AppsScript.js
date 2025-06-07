@@ -42,6 +42,10 @@ class GoogleSheetUtils {
         return range.getRow() <= row && row <= range.getLastRow()
             && range.getColumn() <= col && col <= range.getLastColumn();
     }
+
+    static isCellInsideFormatRange(format, cell) {
+        return format.getRanges().reduce(Functionals.anyReduce(range => GoogleSheetUtils.isCellInsideRange(range, cell)), false);
+    }
 }
 
 function onOpen() {
@@ -49,9 +53,12 @@ function onOpen() {
     ui.createMenu("Brush's Bargain Bin Scripts")
         .addSubMenu(
             ui.createMenu("Conditional Format")
-                .addItem("Enumerate categorical color scale", "categoricalFormatter")
-                .addItem("Copy", "copyFormat")
-                .addItem("Erase all in selected range", "eraseFormat")
+                .addSubMenu(
+                    ui.createMenu("From selected range")
+                        .addItem("Enumerate categorical color scale", "categoricalFormatter")
+                        .addItem("Copy conditional format", "copyConditionalFormat")
+                        .addItem("Erase all in selection", "eraseFormat")
+                )
         ).addToUi();
 }
 
@@ -61,9 +68,9 @@ function categoricalFormatter() {
         function integerLerp(start, end, t) { return Math.floor(lerp(start, end, t)); }
         const CONFIGURATION = {
             color : {
-                start: [0xE6, 0x90, 0x36],
-                mid:   [0x76, 0xA5, 0xAF],
-                end:   [0xD4, 0xA5, 0xBC],
+                start: [0xE6, 0x90, 0x36], // Orange-ish
+                mid:   [0x76, 0xA5, 0xAF], // Dark green-bluish
+                end:   [0xD4, 0xA5, 0xBC], // Mild purple
             },
             midpoint: 0.5,
         };
@@ -77,38 +84,77 @@ function categoricalFormatter() {
     }
     const selectedSheet = SpreadsheetApp.getActiveSheet();
     const selectedRange = selectedSheet.getSelection().getActiveRange();
-    const enumerables = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange).map(cell => cell.getValue());
-    Functionals.attributeAccessorToMutationMap(
-        selectedSheet.getConditionalFormatRules,
-        selectedSheet.setConditionalFormatRules,
-    ).map(originalFormatList =>
-        originalFormatList.concat(
-            enumerables.map((key, i) => [key, interpolator(i/enumerables.length)])
-                .map(pair => SpreadsheetApp.newConditionalFormatRule()
-                        .whenTextEqualTo(pair[0])
-                        .setBackground(tripletArrayToHexString(pair[1]))
-                        .setRanges([selectedRange])
-                        .build()
-                    )
-        )
-    );
+    const enumerables = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange)
+        .map(cell => cell.getValue())
+        .filter((x, i, arr) => arr.indexOf(x) === i);
+    const prompt = `Selected Range: ${selectedRange.getA1Notation()}\n`
+        + `Conditional format count: ${enumerables.length}\n`
+        + `Apply categorical format?`;
+    const ui = SpreadsheetApp.getUi();
+    if (ui.alert(prompt, ui.ButtonSet.YES_NO) === ui.Button.YES) {
+        Functionals.attributeAccessorToMutationMap(
+            selectedSheet.getConditionalFormatRules,
+            selectedSheet.setConditionalFormatRules,
+        ).map(originalFormatList =>
+            originalFormatList.concat(
+                enumerables.map((key, i) => [key, interpolator(i/enumerables.length)])
+                    .map(pair => SpreadsheetApp.newConditionalFormatRule()
+                            .whenTextEqualTo(pair[0])
+                            .setBackground(tripletArrayToHexString(pair[1]))
+                            .setRanges([selectedRange])
+                            .build()
+                        )
+            )
+        );
+    }
 }
 
-function eraseFormat() {
-    function isCellInsideFormatRange(format, cell) {
-        return format.getRanges().reduce(Functionals.anyReduce(range => GoogleSheetUtils.isCellInsideRange(range, cell)), false);
-    }
-
+function copyConditionalFormat() {
     const selectedSheet = SpreadsheetApp.getActiveSheet();
     const selectedRange = selectedSheet.getSelection().getActiveRange();
     const cellList = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange);
+    const selectedFormatList = selectedSheet.getConditionalFormatRules() // Filter out all format that doesn't contain cellList element
+        .filter(format => cellList.reduce(Functionals.anyReduce(cell => GoogleSheetUtils.isCellInsideFormatRange(format, cell)), false));
+
+    const prompt = `Selected Range: ${selectedRange.getA1Notation()}\n`
+        + `Conditional format count: ${selectedFormatList.length}\n`
+        + `Copy?`;
+    const ui = SpreadsheetApp.getUi();
+    if (ui.alert(prompt, ui.ButtonSet.YES_NO) === ui.Button.YES) {
+        const stringTargetSheet = ui.prompt("Type target sheet name:\n").getResponseText();
+        const stringTargetRange = ui.prompt("Type target range using A1 notation\n").getResponseText();
+        try {
+            const targetSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(stringTargetSheet);
+            const targetRange = targetSheet.getRange(stringTargetRange);
+            const clonedFormatList = selectedFormatList.map(format => format.copy().setRanges([targetRange]).build());
+            Functionals.attributeAccessorToMutationMap(
+                targetSheet.getConditionalFormatRules,
+                targetSheet.setConditionalFormatRules,
+            ).map(originalFormatList => originalFormatList.concat(clonedFormatList));
+            ui.alert(`Format copied successfully (Sheet name: ${stringTargetSheet}, Range: ${stringTargetRange})`);
+        } catch {
+            ui.alert(`Error while trying to copy (Sheet name: ${stringTargetSheet}, Range: ${stringTargetRange})`);
+        }
+    }
+}
+
+function eraseFormat() {
+    const selectedSheet = SpreadsheetApp.getActiveSheet();
+    const selectedRange = selectedSheet.getSelection().getActiveRange();
+    const cellList = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange);
+    const ui = SpreadsheetApp.getUi();
     Functionals.attributeAccessorToMutationMap(
         selectedSheet.getConditionalFormatRules,
         selectedSheet.setConditionalFormatRules,
     ).map(
-        originalFormatList => originalFormatList.filter(format => !cellList.reduce(
-            Functionals.anyReduce(cell => isCellInsideFormatRange(format, cell)),
-            false
-        ))
+        originalFormatList => {
+            const filteredList = originalFormatList.filter( // Filter out all format that contain cellList element
+                format => !cellList.reduce(Functionals.anyReduce(cell => GoogleSheetUtils.isCellInsideFormatRange(format, cell)), false)
+            );
+            const prompt = `Erase ${originalFormatList.length - filteredList.length} conditional format?\n`
+                + `Note: This will completely erase it from the sheet, unlike "Clear Formatting" which only detach range`;
+            return ui.alert(prompt, ui.ButtonSet.YES_NO) === ui.Button.YES ? filteredList : originalFormatList;
+        }
     );
 }
+
