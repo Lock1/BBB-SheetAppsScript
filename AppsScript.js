@@ -33,14 +33,15 @@ class Functionals {
 
 /** It's Functionals nested namespace, but JS sucks */
 class Pipe {
+    /** Create a pipeline using provided `fn1` as the base pipe */
     static inlet(fn1, fnAccumulator=Functionals.identity()) {
         return {
             join: fn2 => Pipe.inlet(fn2, x => fn1(fnAccumulator(x))),
-            outlet: fn2 => ({ compute: x => fn2(fn1(fnAccumulator(x))) }), // Pipe sink
+            outlet: fn2 => ({ compute: x => fn2(fn1(fnAccumulator(x))) }), // JS doesn't need specialized API for sink
         };
     }
 
-    /** Pipe source */
+    /** Create a pipeline with the inlet connected to a source (side-effect data producer / constant function) */
     static source(fn1) {
         return Pipe.inlet(_ => fn1());
     }
