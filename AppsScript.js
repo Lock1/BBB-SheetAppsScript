@@ -49,8 +49,8 @@ class Pipe {
 class GoogleSheetUtils {
     static sheetRangeToLinearCellList(range) {
         return Functionals.intStream(1, range.getNumRows()+1)
-            .map(i => Functionals.intStream(1, range.getNumColumns()+1).map(j => range.getCell(i, j)).collect()
-            ).collect()
+            .map(i => Functionals.intStream(1, range.getNumColumns()+1).map(j => range.getCell(i, j)).collect())
+            .collect()
             .flat();
     }
 
