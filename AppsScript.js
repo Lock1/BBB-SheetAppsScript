@@ -4,6 +4,10 @@ class Functionals {
         return x => x;
     }
 
+    static peek(consumer) {
+        return x => { consumer(x); return x; };
+    }
+
     /** Java's lazy stream / Haskell's list budget edition. Evaluation happen when terminal operation `collect()` is called. */
     static stream(arr, mapAccumulator=Functionals.identity()) {
         return {
@@ -14,20 +18,16 @@ class Functionals {
 
     /** `IntStream` budget edition. See `Functionals.stream()`. */
     static intStream(start, end, mapAccumulator=Functionals.identity()) {
+        const sink = consumer => { for (let i = start; i < end; ++i) consumer(mapAccumulator(i)); }
         return {
             map: fn => Functionals.intStream(start, end, x => fn(mapAccumulator(x))),
             collect: () => {
                 const result = [];
-                for (let i = start; i < end; ++i) result.push(mapAccumulator(i));
+                sink(x => result.push(x));
                 return result;
             },
+            sink,
         };
-    }
-
-    // Here's my original name: transformTerribleOOPCargoCultGetSetIntoSanerMutationMap()
-    /** Transform pair of getter-setter into pipelined functional programming map operation */
-    static attributeAccessorToMutationMap(getter, setter) {
-        return { map: mapper => setter(mapper(getter())) };
     }
 }
 
@@ -49,8 +49,8 @@ class GoogleSheetUtils {
     static sheetRangeToLinearCellList(range) {
         return Functionals.intStream(1, range.getNumRows()+1)
             .map(i => Functionals.intStream(1, range.getNumColumns()+1).map(j => range.getCell(i, j)).collect()
-        ).collect()
-        .flat();
+            ).collect()
+            .flat();
     }
 
     static isCellInsideRange(range, cell) { // Ugh, sucks. No type => Hungarian notation again
@@ -68,37 +68,54 @@ class GoogleSheetUtils {
 function onOpen() {
     const ui = SpreadsheetApp.getUi();
     ui.createMenu("Brush's Bargain Bin Scripts")
-        .addSubMenu(
-            ui.createMenu("Conditional Format")
-                .addSubMenu(
-                    ui.createMenu("From selected range")
-                        .addItem("Enumerate categorical color scale", "categoricalFormatter")
-                        .addItem("Copy conditional format", "copyConditionalFormat")
-                        .addItem("Erase all in selection", "eraseConditionalFormat")
-                )
+        .addSubMenu(ui.createMenu("Conditional Format")
+            .addSubMenu(ui.createMenu("From selected range")
+                .addItem("Enumerate categorical color scale", "categoricalFormatter")
+                .addItem("Copy conditional format", "copyConditionalFormat")
+                .addItem("Erase all in selection", "eraseConditionalFormat")
+            )
         ).addToUi();
 }
 
-function categoricalFormatter() {
-    function interpolator(percentage) {
-        function lerp(start, end, t) { return start*(1-t) + end*t; }
-        function integerLerp(start, end, t) { return Math.floor(lerp(start, end, t)); }
-        const CONFIGURATION = {
-            color : {
-                start: [0xE6, 0x90, 0x36], // Orange-ish
-                mid:   [0x76, 0xA5, 0xAF], // Dark green-bluish
-                end:   [0xD4, 0xA5, 0xBC], // Mild purple
-            },
-            midpoint: 0.5,
-        };
-        return Functionals.intStream(0, 3)
-            .map(percentage < CONFIGURATION.midpoint
-                ? i => integerLerp(CONFIGURATION.color.start[i], CONFIGURATION.color.mid[i], percentage/CONFIGURATION.midpoint)
-                : i => integerLerp(CONFIGURATION.color.mid[i],   CONFIGURATION.color.end[i], (percentage-CONFIGURATION.midpoint)/(1-CONFIGURATION.midpoint))
-            ).collect();
+function interpolator(percentage) {
+    function lerp(start, end, t) { return start*(1-t) + end*t; }
+    function integerLerp(start, end, t) { return Math.floor(lerp(start, end, t)); }
+    function hexStringToTripletArray(str) {
+        function hexBytes(str, start) { return str.substring(start, start+2); }
+        return Functionals.intStream(0, 3).map(i => Number.parseInt(hexBytes(str, 2*i+1), 16)).collect();
     }
-    function tripletArrayToHexString([r, g, b]) {
-        return `#${r.toString(16)}${g.toString(16)}${b.toString(16)}`;
+    const CONFIGURATION = {
+        color : {
+            mildOrangePurple: {
+                start: hexStringToTripletArray("#E59036"), // #E59036
+                mid:   hexStringToTripletArray("#76A5AF"), // #76A5AF
+                end:   hexStringToTripletArray("#D4A5BC"), // #D4A5BC
+            },
+            orangePurple: {
+                start: hexStringToTripletArray("#FF9900"), // #FF9900
+                mid:   hexStringToTripletArray("#45818E"), // #45818E
+                end:   hexStringToTripletArray("#A64D79"), // #A64D79
+            },
+            purpleOrangeBlue: {
+                start: hexStringToTripletArray("#4a86e8"), // #4a86e8
+                mid:   hexStringToTripletArray("#ff9900"), // #ff9900
+                end:   hexStringToTripletArray("#c27ba0"), // #c27ba0
+            }
+        },
+        midpoint: 0.5,
+    };
+    const selectedColorScheme = CONFIGURATION.color.orangePurple;
+    return Functionals.intStream(0, 3)
+        .map(percentage < CONFIGURATION.midpoint
+            ? i => integerLerp(selectedColorScheme.start[i], selectedColorScheme.mid[i], percentage/CONFIGURATION.midpoint)
+            : i => integerLerp(selectedColorScheme.mid[i],   selectedColorScheme.end[i], (percentage-CONFIGURATION.midpoint)/(1-CONFIGURATION.midpoint))
+        ).collect();
+}
+
+function categoricalFormatter() {
+    function tripletArrayToHexString(rgb) {
+        const [r, g, b] = rgb.map(byte => byte.toString(16).padStart(2, "0"));
+        return `#${r}${g}${b}`;
     }
     function keyColorRangeTupleToFormat([key, color, range]) {
         return SpreadsheetApp.newConditionalFormatRule()
@@ -114,6 +131,7 @@ function categoricalFormatter() {
         .map(cell => cell.getValue())
         .filter((x, i, arr) => arr.indexOf(x) === i) // Naive duplicate filter
         .map((key, i, arr) => [key, interpolator(i/arr.length), selectedRange])
+        .map(Functionals.peek(([key, color, _]) => Logger.log([key, tripletArrayToHexString(color)])))
         .map(keyColorRangeTupleToFormat);
     const prompt = `Selected Range: ${selectedRange.getA1Notation()}\n`
         + `Conditional format count: ${formatListFromEnumerables.length}\n`
