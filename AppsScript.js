@@ -31,13 +31,14 @@ class Functionals {
     }
 }
 
-/** It's Functionals nested namespace, but JS sucks */
+/** It should be inside of `Functionals` namespace, but JS sucks */
 class Pipe {
     /** Create a pipeline using provided `fn1` as the base pipe */
     static inlet(fn1, fnAccumulator=Functionals.identity()) {
+        const composed = x => fn1(fnAccumulator(x));
         return {
-            join: fn2 => Pipe.inlet(fn2, x => fn1(fnAccumulator(x))),
-            outlet: fn2 => ({ compute: x => fn2(fn1(fnAccumulator(x))) }), // JS doesn't need specialized API for sink
+            join: fn2 => Pipe.inlet(fn2, composed),
+            outlet: fn2 => ({ compute: x => fn2(composed(x)) }), // JS doesn't need specialized API for sink
         };
     }
 
