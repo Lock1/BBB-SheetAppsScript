@@ -78,42 +78,41 @@ function onOpen() {
         ).addToUi();
 }
 
-function interpolator(percentage) {
-    function lerp(start, end, t) { return start*(1-t) + end*t; }
-    function integerLerp(start, end, t) { return Math.floor(lerp(start, end, t)); }
-    function hexStringToTripletArray(str) {
-        function hexBytes(str, start) { return str.substring(start, start+2); }
-        return Functionals.intStream(0, 3).map(i => Number.parseInt(hexBytes(str, 2*i+1), 16)).collect();
-    }
-    const CONFIGURATION = {
-        color : {
-            mildOrangePurple: {
-                start: hexStringToTripletArray("#E59036"), // #E59036
-                mid:   hexStringToTripletArray("#76A5AF"), // #76A5AF
-                end:   hexStringToTripletArray("#D4A5BC"), // #D4A5BC
-            },
-            orangePurple: {
-                start: hexStringToTripletArray("#FF9900"), // #FF9900
-                mid:   hexStringToTripletArray("#45818E"), // #45818E
-                end:   hexStringToTripletArray("#A64D79"), // #A64D79
-            },
-            purpleOrangeBlue: {
-                start: hexStringToTripletArray("#4a86e8"), // #4a86e8
-                mid:   hexStringToTripletArray("#ff9900"), // #ff9900
-                end:   hexStringToTripletArray("#c27ba0"), // #c27ba0
-            }
-        },
-        midpoint: 0.5,
-    };
-    const selectedColorScheme = CONFIGURATION.color.orangePurple;
-    return Functionals.intStream(0, 3)
-        .map(percentage < CONFIGURATION.midpoint
-            ? i => integerLerp(selectedColorScheme.start[i], selectedColorScheme.mid[i], percentage/CONFIGURATION.midpoint)
-            : i => integerLerp(selectedColorScheme.mid[i],   selectedColorScheme.end[i], (percentage-CONFIGURATION.midpoint)/(1-CONFIGURATION.midpoint))
-        ).collect();
-}
-
 function categoricalFormatter() {
+    function interpolator(percentage) {
+        function lerp(start, end, t) { return start*(1-t) + end*t; }
+        function integerLerp(start, end, t) { return Math.floor(lerp(start, end, t)); }
+        function hexStringToTripletArray(str) {
+            function hexBytes(str, start) { return str.substring(start, start+2); }
+            return Functionals.intStream(0, 3).map(i => Number.parseInt(hexBytes(str, 2*i+1), 16)).collect();
+        }
+        const CONFIGURATION = {
+            color : {
+                mildOrangePurple: {
+                    start: hexStringToTripletArray("#E59036"), // #E59036
+                    mid:   hexStringToTripletArray("#76A5AF"), // #76A5AF
+                    end:   hexStringToTripletArray("#D4A5BC"), // #D4A5BC
+                },
+                orangePurple: {
+                    start: hexStringToTripletArray("#FF9900"), // #FF9900
+                    mid:   hexStringToTripletArray("#45818E"), // #45818E
+                    end:   hexStringToTripletArray("#A64D79"), // #A64D79
+                },
+                purpleOrangeBlue: {
+                    start: hexStringToTripletArray("#4a86e8"), // #4a86e8
+                    mid:   hexStringToTripletArray("#ff9900"), // #ff9900
+                    end:   hexStringToTripletArray("#c27ba0"), // #c27ba0
+                }
+            },
+            midpoint: 0.5,
+        };
+        const selectedColorScheme = CONFIGURATION.color.orangePurple;
+        return Functionals.intStream(0, 3)
+            .map(percentage < CONFIGURATION.midpoint
+                ? i => integerLerp(selectedColorScheme.start[i], selectedColorScheme.mid[i], percentage/CONFIGURATION.midpoint)
+                : i => integerLerp(selectedColorScheme.mid[i],   selectedColorScheme.end[i], (percentage-CONFIGURATION.midpoint)/(1-CONFIGURATION.midpoint))
+            ).collect();
+    }
     function tripletArrayToHexString(rgb) {
         const [r, g, b] = rgb.map(byte => byte.toString(16).padStart(2, "0"));
         return `#${r}${g}${b}`;
