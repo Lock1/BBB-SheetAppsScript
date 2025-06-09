@@ -81,13 +81,17 @@ function onOpen() {
 }
 
 function categoricalFormatter() {
-    function interpolator(percentage) {
+    function tripletArrayToHexString(rgb) {
+        const [r, g, b] = rgb.map(byte => byte.toString(16).padStart(2, "0"));
+        return `#${r}${g}${b}`;
+    }
+    function hexStringToTripletArray(str) {
+        function hexBytes(str, start) { return str.substring(start, start+2); }
+        return Functionals.intStream(0, 3).map(i => Number.parseInt(hexBytes(str, 2*i+1), 16)).collect();
+    }
+    function interpolator(percentage, [startColor, midColor, endColor]) {
         function lerp(start, end, t) { return start*(1-t) + end*t; }
         function integerLerp(start, end, t) { return Math.floor(lerp(start, end, t)); }
-        function hexStringToTripletArray(str) {
-            function hexBytes(str, start) { return str.substring(start, start+2); }
-            return Functionals.intStream(0, 3).map(i => Number.parseInt(hexBytes(str, 2*i+1), 16)).collect();
-        }
         const CONFIGURATION = {
             color : {
                 mildOrangePurple: {
@@ -100,24 +104,30 @@ function categoricalFormatter() {
                     mid:   hexStringToTripletArray("#45818E"), // #45818E
                     end:   hexStringToTripletArray("#A64D79"), // #A64D79
                 },
+                strongOrangeBluePurple: {
+                    start: hexStringToTripletArray("#FF9900"), // #FF9900
+                    mid:   hexStringToTripletArray("#4a86e8"), // #4a86e8
+                    end:   hexStringToTripletArray("#c27ba0"), // #c27ba0
+                },
                 purpleOrangeBlue: {
                     start: hexStringToTripletArray("#4a86e8"), // #4a86e8
                     mid:   hexStringToTripletArray("#ff9900"), // #ff9900
                     end:   hexStringToTripletArray("#c27ba0"), // #c27ba0
+                },
+                lightScheme: {
+                    start: hexStringToTripletArray("#e59036"), // #e59036
+                    mid:   hexStringToTripletArray("#d9ead3"), // #d9ead3
+                    end:   hexStringToTripletArray("#d4a5bc"), // #d4a5bc
                 }
             },
             midpoint: 0.5,
         };
-        const selectedColorScheme = CONFIGURATION.color.orangePurple;
+        const selectedColorScheme = { start: startColor, mid: midColor, end: endColor };
         return Functionals.intStream(0, 3)
             .map(percentage < CONFIGURATION.midpoint
                 ? i => integerLerp(selectedColorScheme.start[i], selectedColorScheme.mid[i], percentage/CONFIGURATION.midpoint)
                 : i => integerLerp(selectedColorScheme.mid[i],   selectedColorScheme.end[i], (percentage-CONFIGURATION.midpoint)/(1-CONFIGURATION.midpoint))
             ).collect();
-    }
-    function tripletArrayToHexString(rgb) {
-        const [r, g, b] = rgb.map(byte => byte.toString(16).padStart(2, "0"));
-        return `#${r}${g}${b}`;
     }
     function keyColorRangeTupleToFormat([key, color, range]) {
         return SpreadsheetApp.newConditionalFormatRule()
@@ -129,16 +139,22 @@ function categoricalFormatter() {
 
     const selectedSheet = SpreadsheetApp.getActiveSheet();
     const selectedRange = selectedSheet.getSelection().getActiveRange();
-    const formatListFromEnumerables = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange)
+    const enumerables = GoogleSheetUtils.sheetRangeToLinearCellList(selectedRange)
         .map(cell => cell.getValue())
-        .filter((x, i, arr) => arr.indexOf(x) === i) // Naive duplicate filter
-        .map((key, i, arr) => [key, interpolator(i/arr.length), selectedRange])
+        .filter((x, i, arr) => arr.indexOf(x) === i); // Naive duplicate filter
+
+    const ui = SpreadsheetApp.getUi();
+    const prompt = `Selected Range: ${selectedRange.getA1Notation()}\n`
+        + `Conditional format count: ${enumerables.length}\n`
+        + `Apply categorical format?`;
+    const arrayColor = ui.prompt("Color scheme - 3 RGB hexcode (#XXXXXX) & separated with space:\n").getResponseText()
+        .split(" ")
+        .map(hexStringToTripletArray);
+
+    const formatListFromEnumerables = enumerables.map((key, i, arr) => [key, interpolator(i/arr.length, arrayColor), selectedRange])
         .map(Functionals.peek(([key, color, _]) => Logger.log([key, tripletArrayToHexString(color)])))
         .map(keyColorRangeTupleToFormat);
-    const prompt = `Selected Range: ${selectedRange.getA1Notation()}\n`
-        + `Conditional format count: ${formatListFromEnumerables.length}\n`
-        + `Apply categorical format?`;
-    const ui = SpreadsheetApp.getUi();
+    
     if (ui.alert(prompt, ui.ButtonSet.YES_NO) === ui.Button.YES) {
         Pipe.source(selectedSheet.getConditionalFormatRules)
             .join(originalFormatList => originalFormatList.concat(formatListFromEnumerables))
