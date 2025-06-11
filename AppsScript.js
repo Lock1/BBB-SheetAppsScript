@@ -81,6 +81,16 @@ function onOpen() {
 }
 
 function categoricalFormatter() {
+    const CONFIGURATION = {
+        color : {
+            mildOrangePurple:       "#E59036 #76A5AF #D4A5BC",
+            orangePurple:           "#FF9900 #45818E #A64D79",
+            strongOrangeBluePurple: "#FF9900 #4a86e8 #c27ba0",
+            purpleOrangeBlue:       "#4a86e8 #ff9900 #c27ba0",
+            lightScheme:            "#e59036 #d9ead3 #d4a5bc",
+        },
+        midpoint: 0.5,
+    };
     function tripletArrayToHexString(rgb) {
         const [r, g, b] = rgb.map(byte => byte.toString(16).padStart(2, "0"));
         return `#${r}${g}${b}`;
@@ -92,36 +102,6 @@ function categoricalFormatter() {
     function interpolator(percentage, [startColor, midColor, endColor]) {
         function lerp(start, end, t) { return start*(1-t) + end*t; }
         function integerLerp(start, end, t) { return Math.floor(lerp(start, end, t)); }
-        const CONFIGURATION = {
-            color : {
-                mildOrangePurple: {
-                    start: hexStringToTripletArray("#E59036"), // #E59036
-                    mid:   hexStringToTripletArray("#76A5AF"), // #76A5AF
-                    end:   hexStringToTripletArray("#D4A5BC"), // #D4A5BC
-                },
-                orangePurple: {
-                    start: hexStringToTripletArray("#FF9900"), // #FF9900
-                    mid:   hexStringToTripletArray("#45818E"), // #45818E
-                    end:   hexStringToTripletArray("#A64D79"), // #A64D79
-                },
-                strongOrangeBluePurple: {
-                    start: hexStringToTripletArray("#FF9900"), // #FF9900
-                    mid:   hexStringToTripletArray("#4a86e8"), // #4a86e8
-                    end:   hexStringToTripletArray("#c27ba0"), // #c27ba0
-                },
-                purpleOrangeBlue: {
-                    start: hexStringToTripletArray("#4a86e8"), // #4a86e8
-                    mid:   hexStringToTripletArray("#ff9900"), // #ff9900
-                    end:   hexStringToTripletArray("#c27ba0"), // #c27ba0
-                },
-                lightScheme: {
-                    start: hexStringToTripletArray("#e59036"), // #e59036
-                    mid:   hexStringToTripletArray("#d9ead3"), // #d9ead3
-                    end:   hexStringToTripletArray("#d4a5bc"), // #d4a5bc
-                }
-            },
-            midpoint: 0.5,
-        };
         const selectedColorScheme = { start: startColor, mid: midColor, end: endColor };
         return Functionals.intStream(0, 3)
             .map(percentage < CONFIGURATION.midpoint
@@ -175,20 +155,25 @@ function copyConditionalFormat() {
         + `Copy?`;
     const ui = SpreadsheetApp.getUi();
     if (ui.alert(prompt, ui.ButtonSet.YES_NO) === ui.Button.YES) {
-        const stringTargetSheet = ui.prompt("Type target sheet name:\n").getResponseText();
-        const stringTargetRange = ui.prompt("Type target range using A1 notation\n").getResponseText();
-        try {
-            const targetSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(stringTargetSheet);
-            const targetRange = targetSheet.getRange(stringTargetRange);
-            const clonedFormatList = selectedFormatList.map(format => format.copy().setRanges([targetRange]).build());
-            Pipe.source(targetSheet.getConditionalFormatRules)
-                .join(originalFormatList => originalFormatList.concat(clonedFormatList))
-                .outlet(targetSheet.setConditionalFormatRules)
-                .compute();
-            ui.alert(`Format copied successfully (Sheet name: ${stringTargetSheet}, Range: ${stringTargetRange})`);
-        } catch {
-            ui.alert(`Error while trying to copy (Sheet name: ${stringTargetSheet}, Range: ${stringTargetRange})`);
-        }
+        const targetSheetRangePair = ui.prompt("Type target - Format (without parentheses) - (sheet name,A1 range);(sheet name, A1 range);... :\n")
+            .getResponseText()
+            .split(";");
+        const logResult = targetSheetRangePair.map(pairString => {
+            const [targetSheetString, targetRangeString] = pairString.split(",");
+            try {
+                const targetSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(targetSheetString);
+                const targetRange = targetSheet.getRange(targetRangeString);
+                const clonedFormatList = selectedFormatList.map(format => format.copy().setRanges([targetRange]).build());
+                Pipe.source(targetSheet.getConditionalFormatRules)
+                    .join(originalFormatList => originalFormatList.concat(clonedFormatList))
+                    .outlet(targetSheet.setConditionalFormatRules)
+                    .compute();
+                return `Success(Sheet: ${targetSheetString}, Range: ${targetRangeString})`;
+            } catch {
+                return `Error(Sheet: ${targetSheetString}, Range: ${targetRangeString})`;
+            }
+        });
+        ui.alert(logResult.length > 0 ? `Format copy complete\nLog: [${logResult.join(";")}]` : `Format copy cancelled`);
     }
 }
 
